@@ -381,9 +381,14 @@ defmodule Bamboo.SMTPAdapter do
     |> raise_on_missing_configuration(config)
   end
 
-  defp format_email({nil, email}, _format), do: email
-  defp format_email({name, email}, true), do: "#{rfc822_encode(name)} <#{email}>"
-  defp format_email({_name, email}, false), do: email
+  defp puny_encode(email) do
+    [local_part, domain_part] = String.split(email, "@")
+    Enum.join([local_part, :idna.utf8_to_ascii(domain_part)], "@")
+  end
+
+  defp format_email({nil, email}, _format), do: puny_encode(email)
+  defp format_email({name, email}, true), do: "#{rfc822_encode(name)} <#{puny_encode(email)}>"
+  defp format_email({_name, email}, false), do: puny_encode(email)
 
   defp format_email(emails, format) when is_list(emails) do
     Enum.map(emails, &format_email(&1, format))
@@ -485,6 +490,10 @@ defmodule Bamboo.SMTPAdapter do
 
   defp to_gen_smtp_server_config({:tls, value}, config) when is_atom(value) do
     [{:tls, value} | config]
+  end
+
+  defp to_gen_smtp_server_config({:tls_options, value}, config) do
+    Keyword.put(config, :tls_options, value)
   end
 
   defp to_gen_smtp_server_config({:allowed_tls_versions, value}, config) when is_binary(value) do

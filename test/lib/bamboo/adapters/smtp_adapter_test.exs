@@ -100,10 +100,10 @@ defmodule Bamboo.SMTPAdapterTest do
   ]
 
   @email_in_utf8 [
-    from: {"John Doe", "john@doe.com"},
-    to: [{"Jane Doe", "jane@doe.com"}],
-    cc: [{"Richard Roe", "richard@roe.com"}],
-    bcc: [{"Mary Major", "mary@major.com"}, {"Joe Major", "joe@major.com"}],
+    from: {"John Doe", "john@döé.com"},
+    to: [{"Jane Doe", "jane@döé.com"}],
+    cc: [{"Richard Roe", "richard@röé.com"}],
+    bcc: [{"Mary Major", "mary@major.com"}, {"Joe Major", "joe@mãjor.com"}],
     subject: "日本語のｓｕｂｊｅｃｔ",
     html_body: "<h1>Bamboo is awesome!</h1>",
     text_body: "*Bamboo is awesome!*",
@@ -805,6 +805,17 @@ defmodule Bamboo.SMTPAdapterTest do
     assert String.contains?(raw_email, rfc2231_filename)
   end
 
+  test "raw tls_options get passed through" do
+    tls_options = make_ref()
+    bamboo_config = configuration() |> Map.put(:tls_options, tls_options)
+
+    {:ok, "200 Ok 1234567890"} = SMTPAdapter.deliver(new_email(), bamboo_config)
+
+    assert [{_email, config}] = FakeGenSMTP.fetch_sent_emails()
+
+    assert config[:tls_options] == tls_options
+  end
+
   test "check rfc822 encoding for subject" do
     bamboo_email =
       @email_in_utf8
@@ -830,8 +841,23 @@ defmodule Bamboo.SMTPAdapterTest do
 
     {:ok, _} = SMTPAdapter.deliver(bamboo_email, bamboo_config)
 
-    assert [{{"<foo@bar.com>", _to, _raw_email}, _gen_smtp_config}] =
+    assert [{{"foo@bar.com", _to, _raw_email}, _gen_smtp_config}] =
              FakeGenSMTP.fetch_sent_emails()
+  end
+
+  test "check punycode of domain part in email address for to, from, bcc and cc" do
+    bamboo_email =
+      @email_in_utf8
+      |> new_email()
+
+    bamboo_config = configuration()
+    {:ok, "200 Ok 1234567890"} = SMTPAdapter.deliver(bamboo_email, bamboo_config)
+    [{{from, to, _raw_email}, _gen_smtp_config}] = FakeGenSMTP.fetch_sent_emails()
+    assert from == "john@xn--d-bga2b.com"
+    assert Enum.member?(to, "jane@xn--d-bga2b.com")
+    assert Enum.member?(to, "richard@xn--r-bga2b.com")
+    assert Enum.member?(to, "joe@xn--mjor-goa.com")
+    assert Enum.member?(to, "mary@major.com")
   end
 
   defp format_email(emails), do: format_email(emails, true)
